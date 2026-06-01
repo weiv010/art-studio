@@ -356,14 +356,25 @@ function App(){
     const wr=weekRange(selDate),dates=weekDates(wr.start);
     const wl=dates.map(d=>({date:d,entry:(lessons[d]||{})[s.id]||null})).filter(x=>x.entry);
     const smk=mKey(new Date(selDate+"T00:00:00").getFullYear(),new Date(selDate+"T00:00:00").getMonth());
-    const mc=curriculum[smk]||[];
-    const fn=s.name.slice(1);
+    // 기간 연동된 진도 포함
+    const mc=Object.values(curriculum).flat().filter(c=>{
+      if(!c.startDate&&!c.endDate) return Object.keys(curriculum).includes(smk);
+      const start=c.startDate||"0000-00-00", end=c.endDate||"9999-12-31";
+      return start<=smk+"-31"&&end>=smk+"-01";
+    });
     const allProgs=[...new Set(wl.flatMap(x=>(x.entry.progress||[]).map(id=>mc.find(c=>c.id===id)?.title).filter(Boolean)))];
     const allDetails=[...new Set(wl.flatMap(x=>(x.entry.progress||[]).map(id=>mc.find(c=>c.id===id)?.detail).filter(Boolean)))];
     const allMemos=wl.map(x=>x.entry.memo).filter(Boolean);
     const allPhotos=wl.flatMap(x=>x.entry.photos||[]);
-    const prompt="미술학원 선생님이 학부모에게 보내는 주간 카톡 메시지를 작성해주세요.\n\n학생 이름: "+fn+"\n기간: "+wr.start+" ~ "+wr.end+"\n진행한 진도: "+(allProgs.join(", ")||"기록 없음")+"\n진도 상세내용: "+(allDetails.join(" / ")||"없음")+"\n선생님 메모: "+(allMemos.join(" / ")||"없음")+"\n\n조건:\n- 안녕하세요~로 시작\n- 이름은 "+fn+"으로만 (성 빼고)\n- 진도와 상세내용, 메모를 자연스럽게 녹여서 대화체로\n- 출결 언급 없이\n- 마지막은 이번주 사진 보내드립니다!☺️로 마무리\n- 200자 내외, 이모지 1~2개\n- 메시지 본문만 출력";
-    setReportStu(s);setReportTxt(prompt);setReportPhotos(allPhotos);setReportModal(true);
+
+    // 템플릿 조합
+    const progLine=allProgs.length>0?"이번 주는 "+allProgs.join(", ")+" 진행했습니다~":"이번 주 수업 진행했습니다~";
+    const detailLine=allDetails.length>0?allDetails.join("\n"):"";
+    const memoLine=allMemos.length>0?allMemos.join("\n"):"";
+    const middle=[detailLine,memoLine].filter(Boolean).join("\n\n");
+    const txt=progLine+(middle?"\n"+middle:"")+"\n이번주 사진 보내드립니다💕";
+
+    setReportStu(s);setReportTxt(txt);setReportPhotos(allPhotos);setReportModal(true);
   }
 
   // ── 학생 관리 ──────────────────────────────────────────────
@@ -390,7 +401,15 @@ function App(){
   const dayAll=[...daySched,...dayMakeUp];
   const dayLesson=lessonOf(selDate);
   const selMK=mKey(new Date(selDate+"T00:00:00").getFullYear(),new Date(selDate+"T00:00:00").getMonth());
-  const selCurr=curriculum[selMK]||[];
+  // 선택 날짜의 월을 기간에 포함하는 진도 항목 모두 가져오기
+  const selCurr=Object.values(curriculum).flat().filter(c=>{
+    if(!c.startDate&&!c.endDate) return Object.keys(curriculum).includes(selMK);
+    const start=c.startDate||"0000-00-00";
+    const end=c.endDate||"9999-12-31";
+    const monthStart=selMK+"-01";
+    const monthEnd=selMK+"-31";
+    return start<=monthEnd && end>=monthStart;
+  });
   const prefix=calY+"-"+pad(calM+1);
   const monthLessons=Object.entries(lessons).filter(([d])=>d.startsWith(prefix));
   let totalAttend=0,totalAbsent=0,totalMakeUp2=0;
@@ -776,22 +795,11 @@ function App(){
                 {(()=>{const wr=weekRange(selDate);return <span style={{marginLeft:"auto",background:AC,color:"#fff",borderRadius:9,padding:"3px 10px",fontSize:11,fontWeight:700}}>{wr.start+"~"+wr.end}</span>;})()}
               </div>
             )}
-            <div style={{background:"#F0F7FF",border:"1.5px solid #BFD7F5",borderRadius:14,padding:"12px 14px",marginBottom:10}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#2563EB",marginBottom:6}}>{"💡 Claude 채팅에서 리포트 생성하는 법"}</div>
-              <div style={{fontSize:12,color:"#1E3A5F",lineHeight:1.7}}>
-                {"1. 아래 프롬프트 복사 버튼 탭"}
-                <br/>{"2. Claude 앱 열고 붙여넣기"}
-                <br/>{"3. 생성된 텍스트 복사 후 카톡에 붙여넣기"}
-              </div>
-            </div>
-            <div style={{background:"#F7F3EE",border:"1.5px solid #EDE5DA",borderRadius:11,padding:"12px 14px",fontSize:12,fontFamily:"monospace",color:"#9C7E62",lineHeight:1.5,marginBottom:10,maxHeight:100,overflow:"hidden",wordBreak:"break-all"}}>
-              {reportTxt.slice(0,120)+"..."}
-            </div>
+            <div style={{background:"linear-gradient(135deg,#FFF8F0,#FFF3E8)",borderLeft:"4px solid #E8500A",padding:"14px 16px",borderRadius:"0 14px 14px 0",lineHeight:1.9,fontSize:14,whiteSpace:"pre-wrap",marginBottom:12}}>{reportTxt}</div>
             <div style={{display:"flex",gap:8,marginBottom:reportPhotos.length>0?12:0}}>
-              <button className="btn" style={{flex:1,background:"#E8500A",color:"#fff",fontSize:13,padding:"11px 0",fontWeight:700}}
-                onClick={()=>{ navigator.clipboard?.writeText(reportTxt); alert("복사됐어요! Claude 채팅에 붙여넣으세요 😊"); }}>
-                {"📋 프롬프트 복사"}
-              </button>
+              <button className="btn" style={{background:"#3DBFB8",color:"#fff",fontSize:12,padding:"9px 14px"}}
+                onClick={()=>navigator.clipboard?.writeText(reportTxt)}>{"📋 복사"}</button>
+              <button className="btn bo" style={{flex:1,fontSize:12}} onClick={()=>genReport(reportStu)}>{"🔄 다시 생성"}</button>
             </div>
             {reportPhotos.length>0&&(
               <div>
